@@ -3,8 +3,11 @@ from pyspark.sql.functions import from_json, col
 from pyspark.sql.types import StructType, StructField, StringType, FloatType
 
 # Initialize Spark session
-spark = SparkSession.builder.appName("KafkaToS3").getOrCreate()
-
+spark = (
+    SparkSession.builder.appName("KafkaToS3")
+    .config("spark.jars.packages", "org.apache.spark:spark-sql-kafka-0-10_2.12:3.1.2")
+    .getOrCreate()
+)
 # Define Kafka and S3 configurations
 kafka_broker = "course-kafka:9092"
 kafka_topic = "stock-data"
