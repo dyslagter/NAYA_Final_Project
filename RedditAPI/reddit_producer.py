@@ -5,6 +5,13 @@ from vaderSentiment.vaderSentiment import SentimentIntensityAnalyzer
 import datetime
 import json
 import csv 
+import pandas as pd
+import statistics
+import time
+from confluent_kafka import Producer
+from collections import OrderedDict
+
+
 
 # Set up Reddit API credentials
 reddit = praw.Reddit(
@@ -149,6 +156,7 @@ final_stock_sentiments = defaultdict(list)
 final_stock_comment_count = defaultdict(int)
 final_stock_comment_timestamps = defaultdict(lambda: [float('inf'), float('-inf')])  # [min_timestamp, max_timestamp]
 
+final_stock_sentiments_avg = defaultdict(float)
 
 # Combine mentions and sentiments for stock symbols and their company names
 for symbol in stocks.keys():
@@ -192,6 +200,10 @@ for stock, sentiments in final_stock_sentiments.items():
         avg_sentiment = sum(sentiments) / len(sentiments)
         print(f"{stocks[stock]}: Average Sentiment Score = {avg_sentiment:.2f}")
 
+final_stock_sentiments_avg = {key: round(statistics.mean(value), 2) if value else 0.0 for key, value in final_stock_sentiments.items()}
+
+print(final_stock_sentiments_avg)
+
 # Display the number of comments mentioning each stock
 print("\n--- Number of Comments per Stock ---")
 for stock, count in final_stock_comment_count.items():
@@ -213,7 +225,56 @@ for stock, timestamps in final_stock_comment_timestamps.items():
         max_timestamp = convert_unix_to_readable(timestamps[1])
         print(f"{stocks[stock]}: Min Timestamp = {min_timestamp}, Max Timestamp = {max_timestamp}")
     
+# print(final_stock_comment_count)
+# print(final_stock_sentiments_avg)
 
+# Create a DataFrame from the first dictionary
+df1 = pd.DataFrame.from_dict(final_stock_comment_count, orient='index', columns=['comment_count'])
+
+# Create a DataFrame from the second dictionary
+df2 = pd.DataFrame.from_dict(final_stock_sentiments_avg, orient='index', columns=['total_sentiment_avg'])
+
+# Concatenate the two DataFrames
+df = pd.concat([df1, df2], axis=1)
+
+# Set the index to the stock symbols
+df.index = df.index.astype(str)
+
+
+print(df)
 
 # with open('C:\\Users\\Niv Junowicz\\Desktop\\stock_comments.txt', 'w') as file:
 #     json.dump(stock_comments, file)
+
+
+
+TOPIC_REDDIT = 'reddit-sentiments'
+
+producer_reddit_config = {
+    'bootstrap.servers': 'course-kafka:9092',
+    'client.id': 'producer_reddit_data',
+
+}
+
+producer_reddit_data = Producer(producer_reddit_config)
+
+# Function to send data to Kafka
+def send_data_to_kafka(data, topic, i):
+    producer_reddit_data.produce(topic,key = str(i) , value = data)
+    producer_reddit_data.flush()
+
+# Send each row of the DataFrame to Kafka
+for stock, data in df.iterrows():
+    print(data)
+    data['stock'] = stock
+    send_data_to_kafka(data.to_json(), TOPIC_REDDIT, 111)  # Replace 'my_topic' with your desired topic name
+
+i =0 
+# Send the entire DataFrame to Kafka
+while True:
+    send_data_to_kafka(df.to_json(), TOPIC_REDDIT , i)
+    i = i + 1
+    
+#     producer_weather_data.produce(TOPIC_WEATHER, json.dumps())
+#     producer_weather_data.produce(TOPIC_WEATHER, json.dumps(raw_data_us))
+    time.sleep(3)
