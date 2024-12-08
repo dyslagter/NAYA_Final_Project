@@ -1,3 +1,89 @@
+# from pyspark.sql import SparkSession
+# from pyspark.sql.functions import *
+# from pyspark.sql import types as t
+# import pyspark.sql.functions as f
+# from pyspark.sql.types import *
+
+# TOPIC_REDDIT = 'reddit-sentiments'
+
+# spark = SparkSession \
+#     .builder \
+#     .master("local[*]") \
+#     .appName('reddit_consumer_to_s3') \
+#     .config("spark.jars.packages", "org.apache.spark:spark-sql-kafka-0-10_2.12:3.1.2") \
+#     .config("spark.jars", "/opt/drivers/postgresql-42.3.6.jar") \
+#     .getOrCreate()
+
+# db_url = "jdbc:postgresql://postgres:5432/postgres"
+# db_properties = {
+#     "user": "postgres",
+#     "password": "postgres",
+#     "driver": "org.postgresql.Driver"
+# }
+
+# # Create a streaming DataFrame from Kafka
+# kafka_df = spark \
+#     .readStream \
+#     .format("kafka") \
+#     .option("kafka.bootstrap.servers", 'course-kafka:9092') \
+#     .option("subscribe", TOPIC_REDDIT) \
+#     .load() \
+#     .selectExpr("CAST(value AS STRING)")
+
+
+# print(kafka_df)
+
+# # Convert JSON to DataFrame with schema
+# stocksDF = kafka_df.select(f.from_json(f.col("value"), t.StructType([
+#     t.StructField("comment_count", t.DoubleType()),
+#     t.StructField("total_sentiment_avg", t.DoubleType()),
+#     t.StructField("stock", t.StringType())
+# ])).alias("value")).select("value.*")
+
+# # Add the date column to the DataFrame
+# stocksDF_with_date = stocksDF.withColumn("date", f.current_timestamp())
+
+# # Write the DataFrame to S3 (streaming)
+# query_s3 = (
+#     stocksDF_with_date.writeStream
+#     .format("json")
+#     .option("path", "s3a://final-project-reddit/data/")
+#     .option("checkpointLocation", "s3a://final-project-reddit/checkpoint/")
+#     .outputMode("append")
+#     .start()
+# )
+
+# # Write the DataFrame to PostgreSQL (batch)
+# def write_to_postgres(batch_df, batch_id):
+#     batch_df.write \
+#         .format("jdbc") \
+#         .option("url", db_url) \
+#         .option("dbtable", "Reddit_Data") \
+#         .option("driver", "org.postgresql.Driver") \
+#         .option("user", "postgres") \
+#         .option("password", "postgres") \
+#         .mode("append") \
+#         .save()
+
+# query_postgres = (
+#     stocksDF_with_date.writeStream
+#     .foreachBatch(write_to_postgres)
+#     .start()
+# )
+
+# # Wait for termination of the queries
+# query_s3.awaitTermination()
+# query_postgres.awaitTermination()
+
+
+
+
+
+
+
+
+
+
 from pyspark.sql import SparkSession
 from pyspark.sql import types as t
 from pyspark.sql.functions import col, from_json
