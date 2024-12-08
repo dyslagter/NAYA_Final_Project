@@ -1,9 +1,3 @@
-
-
-1)Create env:
-docker-compose up -d
-
-2. put the Python DAG file at the Dags folder
-
-3. localhost:8080 (airflow UI, you can trigger the DAG)
-4. localhost:9003 (Kafka UI, you can see the topic and data)
+Collect data for the past 7 days
+Aggregate per day per stock and sends to kafka
+Write aggregated data to S3
