@@ -14,13 +14,9 @@ KAFKA_CONFIG = {
     'client.id': 'producer_reddit_data',
 }
 
-STOCKS = {
-    'AAPL': 'Apple',
-    'META': 'Facebook',
-    'GOOGL': 'Google',
-    'NFLX': 'Netflix',
-    'NVDA': 'Nvidia',
-}
+# Load the stocks from the JSON file
+with open('RedditAPI/stocks.json', 'r') as f:
+    STOCKS = json.load(f)
 
 
 # Initialize Reddit API
