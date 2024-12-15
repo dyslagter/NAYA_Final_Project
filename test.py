@@ -1,82 +1,62 @@
-from pyspark.sql import SparkSession
-from pyspark.sql.functions import col, from_json, to_date, current_date
-from pyspark.sql.types import StructType, StructField, StringType, DoubleType
-import datetime
+import psycopg2
 
-# Configuration
-KAFKA_BROKER = "course-kafka:9092"
-TOPIC_NAME = "stock-data"
-S3_BUCKET = "s3a://your-bucket-name"
-S3_ACCESS_KEY = "minioadmin"
-S3_SECRET_KEY = "minioadmin"
-S3_ENDPOINT = "http://minio:9000"
+# PostgreSQL configuration
+POSTGRESQL_HOST = "postgres"
+POSTGRESQL_PORT = "5432"
+POSTGRESQL_DATABASE = "postgres"
+POSTGRESQL_USER = "postgres"
+POSTGRESQL_PASSWORD = "postgres"
+POSTGRESQL_TABLE = "demo_table"
 
-# # Initialize Spark Session
-# spark = (
-#     SparkSession.builder.appName("Kafka-to-S3")
-#     .config("spark.hadoop.fs.s3a.access.key", S3_ACCESS_KEY)
-#     .config("spark.hadoop.fs.s3a.secret.key", S3_SECRET_KEY)
-#     .config("spark.hadoop.fs.s3a.endpoint", S3_ENDPOINT)
-#     .config("spark.hadoop.fs.s3a.connection.ssl.enabled", "false")
-#     .getOrCreate()
-# )
-spark = (
-    SparkSession.builder.appName("Kafka-to-S3")
-    .config("spark.jars.packages", "org.apache.spark:spark-sql-kafka-0-10_2.12:3.4.0")
-    .config("spark.hadoop.fs.s3a.access.key", S3_ACCESS_KEY)
-    .config("spark.hadoop.fs.s3a.secret.key", S3_SECRET_KEY)
-    .config("spark.hadoop.fs.s3a.endpoint", S3_ENDPOINT)
-    .config("spark.hadoop.fs.s3a.connection.ssl.enabled", "false")
-    .getOrCreate()
-)
-# Define schema for incoming Kafka data
-schema = StructType(
-    [
-        StructField(
-            "stocks",
-            StructType(
-                [
-                    StructField("Ticker", StringType(), True),
-                    StructField("Current Price", DoubleType(), True),
-                    StructField("Change", DoubleType(), True),
-                    StructField("Change (%)", DoubleType(), True),
-                ]
-            ),
-            True,
+
+def create_table_and_insert_data():
+    try:
+        # Connect to PostgreSQL
+        connection = psycopg2.connect(
+            host=POSTGRESQL_HOST,
+            port=POSTGRESQL_PORT,
+            database=POSTGRESQL_DATABASE,
+            user=POSTGRESQL_USER,
+            password=POSTGRESQL_PASSWORD,
         )
-    ]
-)
+        cursor = connection.cursor()
 
-# Read Kafka Stream
-df = (
-    spark.readStream.format("kafka")
-    .option("kafka.bootstrap.servers", KAFKA_BROKER)
-    .option("subscribe", TOPIC_NAME)
-    .option("startingOffsets", "latest")
-    .load()
-)
+        # Create table
+        cursor.execute(
+            f"""
+            CREATE TABLE IF NOT EXISTS {POSTGRESQL_TABLE} (
+                id SERIAL PRIMARY KEY,
+                name VARCHAR(50) NOT NULL,
+                value FLOAT NOT NULL
+            );
+        """
+        )
+        print("Table created successfully (if it didn't already exist).")
 
-# Decode and parse Kafka messages
-df = (
-    df.selectExpr("CAST(value AS STRING)")
-    .select(from_json(col("value"), schema).alias("data"))
-    .selectExpr("data.stocks.*")
-)
+        # Insert demo data
+        demo_data = [("Item A", 100.5), ("Item B", 200.75), ("Item C", 300.0)]
 
-# Add a date column based on the current processing date
-df = df.withColumn("date", current_date())
+        for name, value in demo_data:
+            cursor.execute(
+                f"""
+                INSERT INTO {POSTGRESQL_TABLE} (name, value)
+                VALUES (%s, %s)
+            """,
+                (name, value),
+            )
+
+        # Commit changes
+        connection.commit()
+        print("Demo data inserted successfully.")
+
+        # Close connection
+        cursor.close()
+        connection.close()
+        print("Connection closed.")
+
+    except Exception as e:
+        print(f"Error interacting with PostgreSQL: {e}")
 
 
-# Output function to save data as Parquet
-def write_to_s3(df, epoch_id):
-    date = datetime.date.today().isoformat()
-    output_path = f"{S3_BUCKET}/{date}/stocks.parquet"
-    df.write.mode("append").parquet(output_path)
-    print(f"Written data to {output_path}")
-
-
-# Write stream to S3
-query = df.writeStream.foreachBatch(write_to_s3).outputMode("append").start()
-
-# Wait for termination
-query.awaitTermination()
+if __name__ == "__main__":
+    create_table_and_insert_data()
