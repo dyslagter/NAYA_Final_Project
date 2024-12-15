@@ -82,7 +82,7 @@ def fetch_stock_data():
 
 
 def send_data(stock_data):
-    while True:
+    # while True:
         # stock_data = fetch_stock_data()
         if stock_data:
             message = stock_data
@@ -92,7 +92,7 @@ def send_data(stock_data):
                 logger.info(f"Sent data to Kafka: {message}")
             except Exception as e:
                 logger.error(f"Error sending data to Kafka: {e}")
-        time.sleep(5)
+        # time.sleep(5)
 
 
 if __name__ == "__main__":
