@@ -60,25 +60,32 @@ def fetch_stock_data():
             change = current_price - previous_close
             change_percent = (change / previous_close) * 100
 
-            data.append(
-                {
+            # data.append(
+            #     {
+            #         "Ticker": ticker,
+            #         "Current Price": round(current_price, 2),
+            #         "Change": round(change, 2),
+            #         "Change (%)": round(change_percent, 2),
+            #     }
+            # )
+            stock_data = {
                     "Ticker": ticker,
                     "Current Price": round(current_price, 2),
                     "Change": round(change, 2),
                     "Change (%)": round(change_percent, 2),
                 }
-            )
+            send_data(stock_data)
         except Exception as e:
             logger.error(f"Error processing {ticker}: {e}")
 
     return data
 
 
-def send_data():
+def send_data(stock_data):
     while True:
-        stock_data = fetch_stock_data()
+        # stock_data = fetch_stock_data()
         if stock_data:
-            message = {"stocks": stock_data}
+            message = stock_data
             try:
                 producer.send(TOPIC_NAME, value=message)
                 producer.flush()
@@ -89,4 +96,5 @@ def send_data():
 
 
 if __name__ == "__main__":
-    send_data()
+    # send_data()
+    fetch_stock_data()
