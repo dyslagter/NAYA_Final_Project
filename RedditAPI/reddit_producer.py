@@ -37,10 +37,10 @@ def generate_regex_patterns(stocks):
     return stock_symbols_pattern, company_names_pattern
 
 
-# Fetch posts from the last 7 days
+# Fetch posts from the last 30 days
 def fetch_posts(subreddit_name, reddit_instance):
     subreddit = reddit_instance.subreddit(subreddit_name)
-    seven_days_ago = datetime.now() - timedelta(days=7)
+    seven_days_ago = datetime.now() - timedelta(days=30)
     return [
         post for post in subreddit.new(limit=None)
         if datetime.fromtimestamp(post.created_utc) >= seven_days_ago
