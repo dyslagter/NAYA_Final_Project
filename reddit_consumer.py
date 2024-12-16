@@ -54,7 +54,7 @@ def parse_kafka_messages(kafka_df, schema):
 def write_to_s3(parsed_df, output_path: str, checkpoint_path: str):
     return (
         parsed_df.writeStream
-        .format("json")
+        .format("parquet")
         .option("path", output_path)
         .option("checkpointLocation", checkpoint_path)
         .outputMode("append")
