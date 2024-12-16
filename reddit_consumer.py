@@ -1,6 +1,7 @@
 from pyspark.sql import SparkSession
 from pyspark.sql import types as t
 from pyspark.sql.functions import col, from_json
+import jaydebeapi
 
 # Constants
 TOPIC_REDDIT = 'reddit-sentiments'
@@ -63,15 +64,47 @@ def write_to_s3(parsed_df, output_path: str, checkpoint_path: str):
     
 # Write the DataFrame to PostgreSQL (batch)
 def write_to_postgres(batch_df, batch_id):
+    conn = jaydebeapi.connect(
+        "org.postgresql.Driver",
+        "jdbc:postgresql://postgres:5432/postgres",
+        ["postgres", "postgres"],
+        "/opt/drivers/postgresql-42.3.6.jar",
+    )
+    curs = conn.cursor()
+
+    # Check if the table exists
+    curs.execute("SELECT EXISTS(SELECT 1 FROM information_schema.tables WHERE table_name = 'reddit_data')")
+    table_exists = curs.fetchone()[0]
+
+    if not table_exists:
+        # Create the table if it doesn't exist
+        create_table_query = """
+            CREATE TABLE reddit_data (
+                id SERIAL PRIMARY KEY,
+                comment_count INTEGER,
+                average_sentiment NUMERIC,
+                stock TEXT,
+                date TEXT
+            )
+        """
+        curs.execute(create_table_query)
+        # conn.commit()
+
+    # Write the data to the table
     batch_df.write \
         .format("jdbc") \
         .option("url", DB_URL) \
-        .option("dbtable", "Reddit_Data") \
+        .option("dbtable", "reddit_data") \
         .option("driver", "org.postgresql.Driver") \
         .option("user", "postgres") \
         .option("password", "postgres") \
         .mode("append") \
         .save()
+
+    curs.close()
+    conn.close()
+
+
 
 if __name__ == "__main__":
     # Initialize Spark session
