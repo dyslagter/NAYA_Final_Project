@@ -15,7 +15,7 @@ KAFKA_CONFIG = {
 }
 
 # Load the stocks from the JSON file
-with open('RedditAPI/stocks.json', 'r') as f:
+with open('stocks_list.json', 'r') as f:
     STOCKS = json.load(f)
 
 
