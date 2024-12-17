@@ -166,7 +166,7 @@ def send_data(stock_data):
 
 
 if __name__ == "__main__":
-    tickers = load_tickers("stocks_list.json")  # Load stock tickers from JSON file
+    tickers = load_tickers("/home/developer/projects/NAYA_Final_Project/stocks_list.json")  # Load stock tickers from JSON file
     if tickers:  # Proceed if tickers were loaded successfully
         fetch_stock_data_for_month(
             tickers, MONTH_NUMBER

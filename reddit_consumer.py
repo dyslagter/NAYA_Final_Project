@@ -1,137 +1,132 @@
 from pyspark.sql import SparkSession
-from pyspark.sql import types as t
+from pyspark.sql.types import StructType, StructField, StringType, DoubleType, IntegerType
 from pyspark.sql.functions import col, from_json
-import jaydebeapi
+import psycopg2
 
 # Constants
-TOPIC_REDDIT = 'reddit-sentiments'
-KAFKA_BOOTSTRAP_SERVERS = 'course-kafka:9092'
+TOPIC_REDDIT = "reddit-sentiments"
+KAFKA_BOOTSTRAP_SERVERS = "course-kafka:9092"
+
+POSTGRESQL_HOST = "postgres"
+POSTGRESQL_PORT = "5432"
+POSTGRESQL_DATABASE = "postgres"
+POSTGRESQL_USER = "postgres"
+POSTGRESQL_PASSWORD = "postgres"
+POSTGRESQL_TABLE = "reddit_data"
+
 S3_OUTPUT_PATH = "s3a://final-project-reddit/data/"
 S3_CHECKPOINT_PATH = "s3a://final-project-reddit/checkpoint/"
-DB_URL = "jdbc:postgresql://postgres:5432/postgres"
 
-# Schema for the incoming data
-def get_reddit_schema():
-    return t.StructType([
-        t.StructField("date", t.StringType(), True),
-        t.StructField("stock", t.StringType(), True),
-        t.StructField("average_sentiment", t.DoubleType(), True),
-        t.StructField("comment_count", t.IntegerType(), True),
-    ])
+# Define schema for Reddit data
+schema = StructType([
+    StructField("date", StringType(), True),
+    StructField("stock", StringType(), True),
+    StructField("average_sentiment", DoubleType(), True),
+    StructField("comment_count", IntegerType(), True),
+])
 
-# Initialize Spark Session
-def create_spark_session(app_name: str):
-    return (
-        SparkSession.builder
-        .master("local[*]")
-        .appName(app_name)
-        .config("spark.jars.packages", "org.apache.spark:spark-sql-kafka-0-10_2.12:3.1.2")
-        .config("spark.jars", "/opt/drivers/postgresql-42.3.6.jar") 
-        .getOrCreate()
-    )
 
-# Read from Kafka
-def read_from_kafka(spark, topic: str, bootstrap_servers: str):
-    return (
-        spark.readStream
-        .format("kafka")
-        .option("kafka.bootstrap.servers", bootstrap_servers)
-        .option("subscribe", topic)
-#        .option("failOnDataLoss","false")
-        .load()
-        .selectExpr("CAST(key AS STRING)", "CAST(value AS STRING)")
-    )
+def write_to_postgres(df, batch_id):
+    """
+    Write DataFrame to PostgreSQL table.
+    :param df: Spark DataFrame
+    :param batch_id: Batch ID
+    """
+    try:
+        print(f"Writing batch {batch_id} to PostgreSQL:")
+        df.show()
 
-# Transform Kafka data into a DataFrame with schema
-def parse_kafka_messages(kafka_df, schema):
-    return (
-        kafka_df
-        .select(col("value").cast("string"))
-        .select(from_json(col("value"), schema).alias("value"))
-        .select("value.*")
-    )
+        # Connect to PostgreSQL
+        connection = psycopg2.connect(
+            host=POSTGRESQL_HOST,
+            port=POSTGRESQL_PORT,
+            database=POSTGRESQL_DATABASE,
+            user=POSTGRESQL_USER,
+            password=POSTGRESQL_PASSWORD,
+        )
+        cursor = connection.cursor()
 
-# Write the parsed data to S3
-def write_to_s3(parsed_df, output_path: str, checkpoint_path: str):
-    return (
-        parsed_df.writeStream
-        .format("parquet")
-        .option("path", output_path)
-        .option("checkpointLocation", checkpoint_path)
-        .outputMode("append")
-        .start()
-    )
-    
-# Write the DataFrame to PostgreSQL (batch)
-def write_to_postgres(batch_df, batch_id):
-    conn = jaydebeapi.connect(
-        "org.postgresql.Driver",
-        "jdbc:postgresql://postgres:5432/postgres",
-        ["postgres", "postgres"],
-        "/opt/drivers/postgresql-42.3.6.jar",
-    )
-    curs = conn.cursor()
-
-    # Check if the table exists
-    curs.execute("SELECT EXISTS(SELECT 1 FROM information_schema.tables WHERE table_name = 'reddit_data')")
-    table_exists = curs.fetchone()[0]
-
-    if not table_exists:
-        # Create the table if it doesn't exist
-        create_table_query = """
-            CREATE TABLE reddit_data (
+        # Create table if it doesn't exist
+        cursor.execute(f"""
+            CREATE TABLE IF NOT EXISTS {POSTGRESQL_TABLE} (
                 id SERIAL PRIMARY KEY,
-                comment_count INTEGER,
-                average_sentiment NUMERIC,
+                date TEXT,
                 stock TEXT,
-                date TEXT
-            )
-        """
-        curs.execute(create_table_query)
-        # conn.commit()
+                average_sentiment DOUBLE PRECISION,
+                comment_count INTEGER
+            );
+        """)
 
-    # Write the data to the table
-    batch_df.write \
-        .format("jdbc") \
-        .option("url", DB_URL) \
-        .option("dbtable", "reddit_data") \
-        .option("driver", "org.postgresql.Driver") \
-        .option("user", "postgres") \
-        .option("password", "postgres") \
-        .mode("append") \
-        .save()
+        # Insert data into PostgreSQL
+        for row in df.collect():
+            cursor.execute(f"""
+                INSERT INTO {POSTGRESQL_TABLE} (date, stock, average_sentiment, comment_count)
+                VALUES (%s, %s, %s, %s);
+            """, (row.date, row.stock, row.average_sentiment, row.comment_count))
 
-    curs.close()
-    conn.close()
+        # Commit changes and close connection
+        connection.commit()
+        cursor.close()
+        connection.close()
+        print(f"Batch {batch_id} content:")
+        df.show()
+        print(f"Batch {batch_id} written to PostgreSQL successfully.")
 
+    except Exception as e:
+        print(f"Error writing to PostgreSQL: {e}")
 
 
 if __name__ == "__main__":
     # Initialize Spark session
-    spark = create_spark_session("Reddit Consumer to S3")
-
-    # Define schema
-    reddit_schema = get_reddit_schema()
+    spark = (
+        SparkSession.builder.master("local[*]")
+        .appName("RedditKafkaToPostgres")
+        .config("spark.jars.packages", "org.apache.spark:spark-sql-kafka-0-10_2.12:3.1.2")
+        .config("spark.jars", "/opt/drivers/postgresql-42.3.6.jar")
+        .config("spark.hadoop.fs.s3a.access.key", "minioadmin")
+        .config("spark.hadoop.fs.s3a.secret.key", "minioadmin")
+        .config("spark.hadoop.fs.s3a.endpoint", "http://minio:9000")
+        .config("spark.hadoop.fs.s3a.impl", "org.apache.hadoop.fs.s3a.S3AFileSystem")
+        .config("spark.hadoop.fs.s3a.path.style.access", "true")
+        .getOrCreate()
+    )
 
     # Read data from Kafka
-    kafka_df = read_from_kafka(spark, TOPIC_REDDIT, KAFKA_BOOTSTRAP_SERVERS)
+    raw_stream = (
+        spark.readStream.format("kafka")
+        .option("kafka.bootstrap.servers", KAFKA_BOOTSTRAP_SERVERS)
+        .option("subscribe", TOPIC_REDDIT)
+        .load()
+        .selectExpr("CAST(value AS STRING)")
+    )
 
-    # Transform the Kafka data
-    stocks_df = parse_kafka_messages(kafka_df, reddit_schema)
+    # Parse the Kafka messages and apply schema
+    parsed_stream = (
+        raw_stream.select(from_json(col("value"), schema).alias("data"))
+        .select("data.*")
+    )
 
-    # Write transformed data to S3
-    query = write_to_s3(stocks_df, S3_OUTPUT_PATH, S3_CHECKPOINT_PATH)
-    
-    # Write stream to postgreSQL
-    query_postgres = (
-        stocks_df.writeStream
-        .foreachBatch(write_to_postgres)
+    # Write stream to PostgreSQL using foreachBatch
+    postgres_query = (
+        parsed_stream.writeStream.foreachBatch(write_to_postgres)
+        .outputMode("append")
         .start()
     )
 
-    # Print schema for verification
-    stocks_df.printSchema()
+    # Write stream to S3
+    s3_query = (
+        parsed_stream.writeStream
+        .format("parquet")
+        .option("path", S3_OUTPUT_PATH)
+        .option("checkpointLocation", S3_CHECKPOINT_PATH)
+        .outputMode("append")
+        .start()
+    )
 
-    # Wait for the streaming to finish
-    query.awaitTermination()
-    query_postgres.awaitTermination()
+    # Print schema for debugging
+    parsed_stream.printSchema()
+
+
+    # Await termination for both queries
+    postgres_query.awaitTermination()
+    s3_query.awaitTermination()

@@ -15,7 +15,7 @@ KAFKA_CONFIG = {
 }
 
 # Load the stocks from the JSON file
-with open('stocks_list.json', 'r') as f:
+with open("/home/developer/projects/NAYA_Final_Project/stocks_list.json", 'r') as f:
     STOCKS = json.load(f)
 
 
